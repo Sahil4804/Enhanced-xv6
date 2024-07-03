@@ -104,22 +104,6 @@ struct proc
   int xstate;           // Exit status to be returned to parent's wait
   int pid;              // Process ID
 
-  // my additions
-
-  uint64 ticks;
-  uint64 currentticks;
-  uint64 funcadr;
-  uint64 ishandler;
-  struct trapframe *pasttrapframe; // store the past trap frame
-
-  // for scheduling
-  int queue;      // queue number
-  int sliceticks; // number of ticks in the current slice
-  int slicetime;  // number of ticks in the current slice
-  int flagforio;
-
-  int timeofwait;
-
   // wait_lock must be held when using this:
   struct proc *parent; // Parent process
 
@@ -135,6 +119,13 @@ struct proc
   uint rtime;                  // How long the process ran for
   uint ctime;                  // When was the process created
   uint etime;                  // When did the process exited
+  int dynamicrtime; // time running for the last run
+  int wtime; //  total time spent in the queue waiting being ready to run
+  int dynamicstime; // total time spent in the queue sleeping
+  int staticpriority; // priority of the processs
+  int numberoftimescheduled; // number of times the process was scheduled
+  int defaultflag; //is default or not
+  int defaultflag2; //is default or not
 };
 
 extern struct proc proc[NPROC];

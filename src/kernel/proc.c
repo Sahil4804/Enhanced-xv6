@@ -109,7 +109,6 @@ allocproc(void)
 {
   struct proc *p;
 
-  // p->pasttrapframe = NULL;
   for (p = proc; p < &proc[NPROC]; p++)
   {
     acquire(&p->lock);
@@ -122,7 +121,6 @@ allocproc(void)
       release(&p->lock);
     }
   }
-
   return 0;
 
 found:
@@ -136,7 +134,6 @@ found:
     release(&p->lock);
     return 0;
   }
-  // p->pasttrapframe = (struct trapframe *)kalloc();
 
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
@@ -154,16 +151,15 @@ found:
   p->context.sp = p->kstack + PGSIZE;
   p->rtime = 0;
   p->etime = 0;
+  p->dynamicrtime = 0;
+  p->wtime = 0;
+  p->dynamicstime = 0;
   p->ctime = ticks;
-  p->ticks = 0;
-  p->ishandler = 0;
-  p->currentticks = 0;
-  p->funcadr = 0;
-  p->sliceticks = 0;
-  p->queue = 0;
-  p->flagforio = 0; // 0 for not waiting for io, 1 for waiting for io
-  p->slicetime = 1;
-  p->timeofwait = 0;
+  p->staticpriority = 50;
+  p->defaultflag = 0;
+  p->defaultflag2 = 0;
+  p->numberoftimescheduled = 0;
+
   return p;
 }
 
@@ -175,7 +171,6 @@ freeproc(struct proc *p)
 {
   if (p->trapframe)
     kfree((void *)p->trapframe);
-
   p->trapframe = 0;
   if (p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
@@ -343,7 +338,6 @@ int fork(void)
   acquire(&np->lock);
   np->state = RUNNABLE;
   release(&np->lock);
-
   return pid;
 }
 
@@ -481,100 +475,158 @@ void scheduler(void)
   {
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
-#ifdef RR
+    struct proc *temp = 0;
+    int mn = 1e8;
+    // int realones = 0;
+    int counter = 0;
     for (p = proc; p < &proc[NPROC]; p++)
+    {
+
+      acquire(&p->lock);
+      // printf("checking %d\n", p->staticpriority);
+      int RBI = (3 * p->dynamicrtime - p->dynamicstime - p->wtime) * 50;
+      RBI /= (p->dynamicrtime + p->dynamicstime + p->wtime + 1);
+      if (RBI < 0)
+        RBI = 0;
+      if (p->defaultflag == 1)
+      {
+        RBI = 25;
+      }
+      int DP = p->staticpriority + RBI;
+      if (DP > 100)
+        DP = 100;
+      if (DP < mn && p->state == RUNNABLE)
+      {
+        mn = DP;
+        counter = 0;
+        temp = p;
+      }
+      if (DP == mn)
+        counter++;
+      release(&p->lock);
+    }
+    if (counter > 1)
+    {
+      int counter2 = 0;
+      int mn2 = 1e8;
+      for (p = proc; p < &proc[NPROC]; p++)
+      {
+        acquire(&p->lock);
+        if (p->state != RUNNABLE)
+        {
+          release(&p->lock);
+          continue;
+        }
+        int RBI = (3 * p->dynamicrtime - p->dynamicstime - p->wtime) * 50;
+        RBI /= (p->dynamicrtime + p->dynamicstime + p->wtime + 1);
+        if (RBI < 0)
+          RBI = 0;
+        if (p->defaultflag == 1)
+        {
+          RBI = 25;
+        }
+        int DP = p->staticpriority + RBI;
+        if (DP > 100)
+          DP = 100;
+        if (DP == mn)
+        {
+          if (p->numberoftimescheduled < mn2)
+          {
+            mn2 = p->numberoftimescheduled;
+            counter2 = 0;
+            temp = p;
+          }
+          if (p->numberoftimescheduled == mn2)
+            counter2++;
+        }
+        release(&p->lock);
+      }
+      if (counter2 > 1)
+      {
+        int mn3 = 1e8;
+        for (p = proc; p < &proc[NPROC]; p++)
+        {
+          acquire(&p->lock);
+
+          if (p->state != RUNNABLE)
+          {
+            release(&p->lock);
+            continue;
+          }
+          int RBI = (3 * p->dynamicrtime - p->dynamicstime - p->wtime) * 50;
+          RBI /= (p->dynamicrtime + p->dynamicstime + p->wtime + 1);
+          if (RBI < 0)
+            RBI = 0;
+          if (p->defaultflag == 1)
+          {
+            // p->defaultflag = 0;
+            RBI = 25;
+          }
+          int DP = p->staticpriority + RBI;
+          if (DP > 100)
+            DP = 100;
+          if (DP == mn && p->numberoftimescheduled == mn2)
+          {
+            if (mn3 > p->ctime)
+            {
+              mn3 = p->ctime;
+              temp = p;
+            }
+          }
+          release(&p->lock);
+        }
+        p = temp;
+      }
+      else
+      {
+        p = temp;
+      }
+    }
+    else
+    {
+      p = temp;
+    }
+
+    if (p != 0)
     {
       acquire(&p->lock);
       if (p->state == RUNNABLE)
       {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
         p->state = RUNNING;
-        
+        p->defaultflag = 0;
         c->proc = p;
-        // procdump();
+        p->dynamicstime = 0;
+        p->dynamicrtime = 0;
+        p->numberoftimescheduled++;
         swtch(&c->context, &p->context);
-        c->proc = 0;
+        // procdump();
         // Process is done running for now.
         // It should have changed its p->state before coming back.
+        c->proc = 0;
       }
       release(&p->lock);
     }
-#endif
-#ifdef FCFS
-    
-#endif
-#ifdef MLFQ
-    int minqueue = 100;
-    struct proc *temp = 0;
-
-    for (p = proc; p < &proc[NPROC]; p++)
-    {
-      if (p->state == RUNNABLE)
-      {
-        if (p->queue < minqueue)
-        {
-          minqueue = p->queue;
-        }
-      }
-    }
-    for (p = proc; p < &proc[NPROC]; p++)
-    {
-      if (p->state == RUNNABLE)
-      {
-        if (p->queue == minqueue)
-        {
-          temp = p;
-          break;
-        }
-      }
-    }
-    int someflag = 1;
-    if (temp != 0)
-    {
-      for (p = proc; p < &proc[NPROC]; p++)
-      {
-        // acquire(&p->lock);
-        if (p->state == RUNNABLE && p->flagforio == 1 && p->queue == minqueue)
-        {
-          someflag = 0;
-          temp = p;
-          break;
-        }
-
-      }
-      if (someflag == 1)
-      {
-        int maxwtime = -1;
-        struct proc * sahil=p;
-        for (p = proc; p < &proc[NPROC]; p++)
-        {
-          if (p->state == RUNNABLE && p->queue == minqueue)
-          {
-            if (p->timeofwait > maxwtime)
-            {
-              sahil=p;
-              maxwtime = p->timeofwait;
-
-            }
-          }
-        }
-        temp=sahil;
-      }
-
-      acquire(&temp->lock);
-      temp->state = RUNNING;
-      temp->timeofwait = 0;
-      c->proc = temp;
-      // procdump();
-      swtch(&c->context, &temp->context);
-      c->proc = 0;
-      release(&temp->lock);
-    }
-#endif
+    // for (p = proc; p < &proc[NPROC]; p++)
+    // {
+    //   acquire(&p->lock);
+    //   if (p->state == RUNNABLE && temp == p)
+    //   {
+    //     // Switch to chosen process.  It is the process's job
+    //     // to release its lock and then reacquire it
+    //     // before jumping back to us.
+    //     p->state = RUNNING;
+    //     c->proc = p;
+    //     swtch(&c->context, &p->context);
+    //     // procdump();
+    //     // Process is done running for now.
+    //     // It should have changed its p->state before coming back.
+    //     c->proc = 0;
+    //   }
+    //   release(&p->lock);
+    // }
   }
 }
+
 // Switch to scheduler.  Must hold only p->lock
 // and have changed proc->state. Saves and restores
 // intena because intena is a property of this
@@ -783,11 +835,8 @@ void procdump(void)
       state = states[p->state];
     else
       state = "???";
-    if (p->state == RUNNING)
-    {
-      printf("%d %s %s %d %d", p->pid, state, p->name, p->queue, ticks);
-      printf("\n");
-    }
+    printf("%d %s %s", p->pid, state, p->name);
+    printf("\n");
   }
 }
 
@@ -852,12 +901,69 @@ void update_time()
   for (p = proc; p < &proc[NPROC]; p++)
   {
     acquire(&p->lock);
+    if (p->state == RUNNING || p->state == SLEEPING || p->state == RUNNABLE)
+    {
+      if (p->pid >= 4 && p->pid <= 13)
+      {
+        
+        int RBI = (3.0 * p->dynamicrtime - p->dynamicstime - p->wtime) * 50;
+        RBI /= (p->dynamicrtime + p->dynamicstime + p->wtime + 1);
+        if (RBI < 0)
+          RBI = 0;
+        p->defaultflag = 0;
+        int DP = p->staticpriority + RBI;
+        if (DP > 100)
+          DP = 100;
+
+        // printf("%d %d %d\n", p->pid, ticks-1, DP);
+      }
+    }
+    release(&p->lock);
+  }
+  for (p = proc; p < &proc[NPROC]; p++)
+  {
+    acquire(&p->lock);
     if (p->state == RUNNING)
     {
+      p->dynamicstime = 0;
       p->rtime++;
+      p->dynamicrtime++;
+    }
+    if (p->state == SLEEPING)
+    {
+      p->dynamicrtime = 0;
+      p->dynamicstime++;
+    }
+    if (p->state == RUNNABLE)
+    {
+      p->dynamicrtime = 0;
+      p->wtime++;
+    }
+    release(&p->lock);
+  }
+  for (p = proc; p < &proc[NPROC]; p++)
+  {
+    acquire(&p->lock);
+    if (p->state == RUNNING || p->state == SLEEPING || p->state == RUNNABLE)
+    {
+      if (p->pid >= 4 && p->pid <= 13)
+      {
+
+        int RBI = (3.0 * p->dynamicrtime - p->dynamicstime - p->wtime) * 50;
+        RBI /= (p->dynamicrtime + p->dynamicstime + p->wtime + 1);
+        if (RBI < 0)
+          RBI = 0;
+        // if (p->defaultflag == 1)
+        // {
+        //   RBI = 25;
+        // }
+        int DP = p->staticpriority + RBI;
+        if (DP > 100)
+          DP = 100;
+
+        // printf("%d %d %d\n", p->pid, ticks, DP);
+      }
     }
     release(&p->lock);
   }
 }
-
-// this is my function

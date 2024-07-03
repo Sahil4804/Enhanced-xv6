@@ -108,4 +108,3 @@ sys_waitx(void)
     return -1;
   return ret;
 }
-

@@ -15,7 +15,7 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
-int someyuckcounts = 0;
+
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
 static int
@@ -67,10 +67,17 @@ sys_dup(void)
   return fd;
 }
 
+static int readCount = 0;
+uint64
+sys_getreadcount(void)
+{
+  return readCount;
+}
+
 uint64
 sys_read(void)
 {
-  someyuckcounts++;
+  readCount++;
   struct file *f;
   int n;
   uint64 p;
@@ -541,26 +548,57 @@ sys_pipe(void)
   return 0;
 }
 
-uint64 sys_getreadcount(void)
+// uint64 sys_sigalarm(void)
+// {
+//   struct proc *p = myproc();
+//   argaddr(0, &(p->ticks));
+//   argaddr(1, &(p->funcadr));
+//   return 0;
+// }
+uint64 sys_set_priority(void)
 {
-  return someyuckcounts;
-}
-
-uint64 sys_sigalarm(void)
-{
+  uint64 pid;
+  uint64 new_priority;
+  argaddr(0, &(pid));
+  argaddr(1, &(new_priority));
   struct proc *p = myproc();
-  argaddr(0, &(p->ticks));
-  argaddr(1, &(p->funcadr));
+  int f = 0;
+  for (p = proc; p < &proc[NPROC]; p++)
+  {
+    acquire(&p->lock);
+    if (p->pid == pid)
+    {
+      int RBI = (3 * p->dynamicrtime - p->dynamicstime - p->wtime) * 50;
+      RBI /= (p->dynamicrtime + p->dynamicstime + p->wtime + 1);
+      if (RBI < 0)
+        RBI = 0;    
+      int DP = p->staticpriority + RBI;
+      if (DP > 100)
+        DP = 100;
+      // printf("gotit \n");
+      p->staticpriority = new_priority;
+      // int RBI2 = (3 * p->dynamicrtime - p->dynamicstime - p->wtime) * 50;
+      // RBI2 /= (p->dynamicrtime + p->dynamicstime + p->wtime + 1);
+      // if (RBI2 < 0)
+      //   RBI2 = 0;
+      p->defaultflag = 1;
+      int DP2 = p->staticpriority + 25;
+      if (DP2 > 100)
+        DP2 = 100;
+      printf("priority of process with pid %d changed from %d to %d\n", pid, DP, DP2);
+      if (DP2 < DP)
+      {
+        f = 1;
+      }
+      release(&p->lock);
+      break;
+    }
+    release(&p->lock);
+  }
+  if (f)
+  {
+
+    yield();
+  }
   return 0;
-}
-
-uint64 sys_sigreturn(void)
-{
-  struct proc *p = myproc();
-  memmove(p->trapframe, p->pasttrapframe, PGSIZE);
-  p->currentticks = 0;
-  p->ishandler = 0;
-  kfree((void *)p->pasttrapframe);
-  p->pasttrapframe = 0;
-  return p->trapframe->a0;
 }

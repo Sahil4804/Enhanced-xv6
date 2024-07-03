@@ -64,6 +64,75 @@ void usertrap(void)
 
     syscall();
   }
+  else if (r_scause() == 15)
+  {
+    // Modify usertrap() to recognize page faults.
+    // When a page-fault occurs on a COW page, allocate a new page with kalloc(),
+    // copy the old page to the new page,
+    // and install the new page in the PTE with PTE_W set.
+
+    // Get physial page address and correct flags.
+    if (r_stval() >= MAXVA || r_stval() <= 0)
+    {
+      // printf("page not found\n");
+      // p->killed = 1;
+      setkilled(p);
+    }
+    else
+    {
+      uint64 start_va = PGROUNDDOWN(r_stval());
+      pte_t *pte;
+      pte = walk(p->pagetable, start_va, 0);
+      if (pte == 0)
+      {
+        printf("page not found\n");
+        // p->killed = 1;
+        setkilled(p);
+        // goto end;
+      }
+      else
+      {
+        if (*pte & PTE_RSW)
+        {
+          uint flags = PTE_FLAGS(*pte);
+          // +Write, -COW
+          flags |= PTE_W;
+          flags &= (~PTE_RSW);
+
+          char *mem = kalloc();
+          if (mem == 0)
+          {
+            // printf("kalloc failed\n");
+            // p->killed = 1;
+            setkilled(p);
+            // goto end;
+          }
+          else
+          {
+            char *pa = (char *)PTE2PA(*pte);
+            memmove(mem, pa, PGSIZE);
+            kfree((void *)pa);
+            *pte = PA2PTE(mem) | flags;
+            // uvmunmap(p->pagetable, start_va, PGSIZE, 0);
+            // decrement old pa ref count.
+            // dec_ref((void *)pa);
+            // if (mappages(p->pagetable, start_va, PGSIZE, (uint64)mem, flags) != 0)
+            // {
+            //   p->killed = 1;
+            //   printf("sometthing is wrong in mappages in trap.\n");
+            // }
+          }
+        }
+        else
+        {
+          printf("page not found\n");
+          // p->killed = 1;
+          setkilled(p);
+          // goto end;
+        }
+      }
+    }
+  }
   else if ((which_dev = devintr()) != 0)
   {
     // ok
@@ -80,153 +149,10 @@ void usertrap(void)
 
   // give up the CPU if this is a timer interrupt.
   if (which_dev == 2)
-  {
-    printf("%d %d %d\n", ticks, p->pid, p->queue);
-    p->currentticks++;
-    if (p->currentticks % p->ticks == 0 && p->ishandler == 0)
-    {
-      p->pasttrapframe = kalloc();
-      p->ishandler = 1;
-      memmove(p->pasttrapframe, p->trapframe, PGSIZE);
-      // p->pasttrapframe = p->trapframe;
-      p->trapframe->epc = p->funcadr;
-      // sigreturn();
-    }
-
-#ifdef RR
     yield();
-#endif
-#ifdef MLFQ
-    for (p = proc; p < &proc[NPROC]; p++)
-    {
-      acquire(&p->lock);
-      if (p->state == RUNNABLE)
-      {
-        p->timeofwait++;
-      }
-
-      release(&p->lock);
-    }
-    for (p = proc; p < &proc[NPROC]; p++)
-    {
-      acquire(&p->lock);
-      if (p->state == RUNNING)
-      {
-        p->sliceticks++;
-      }
-
-      release(&p->lock);
-    }
-    for (p = proc; p < &proc[NPROC]; p++)
-    {
-      if (p->state == RUNNABLE && p->timeofwait >= 30 && p->queue > 0)
-      {
-        if (p->pid >= 9)
-        {
-          printf("%d %d %d\n", ticks - 1, p->pid, p->queue);
-        }
-        // if (p->queue > 0)
-        // {
-        p->queue--;
-        if (p->pid >= 9)
-        {
-          printf("%d %d %d\n", ticks, p->pid, p->queue);
-        }
-        // }
-        if (p->queue == 0)
-        {
-          p->slicetime = 1;
-        }
-        else if (p->queue == 1)
-        {
-          p->slicetime = 3;
-        }
-        else if (p->queue == 2)
-        {
-          p->slicetime = 9;
-        }
-        else if (p->queue == 3)
-        {
-          p->slicetime = 15;
-        }
-        // printf("%d %d %d\n", ticks, p->pid, p->queue);
-        p->sliceticks = 0;
-        p->timeofwait = 0;
-        p->flagforio = 0;
-      }
-    }
-    // struct proc *temp = p;
-
-    for (p = proc; p < &proc[NPROC]; p++)
-    {
-      if (p->state == RUNNABLE && p->queue == 0 && p->queue < myproc()->queue)
-      {
-        myproc()->flagforio = 1;
-        // printf("YES\n");
-        yield();
-      }
-    }
-    for (p = proc; p < &proc[NPROC]; p++)
-    {
-      if (p->state == RUNNABLE && p->queue == 1 && p->queue < myproc()->queue)
-      {
-        myproc()->flagforio = 1;
-        yield();
-      }
-    }
-
-    for (p = proc; p < &proc[NPROC]; p++)
-    {
-      if (p->state == RUNNABLE && p->queue == 2 && p->queue < myproc()->queue)
-      {
-        myproc()->flagforio = 1;
-        yield();
-      }
-    }
-
-    for (p = proc; p < &proc[NPROC]; p++)
-    {
-      if (p->state == RUNNABLE && p->queue == 3 && p->queue < myproc()->queue)
-      {
-        myproc()->flagforio = 1;
-        yield();
-      }
-    }
-    p = myproc();
-    if (p->sliceticks == p->slicetime)
-    {
-      // printf("%d %d %d\n", ticks, p->pid, p->queue);
-      p->flagforio = 0;
-      if (p->queue < 3)
-
-        p->queue++;
-      if (p->pid >= 9)
-      {
-        printf("%d %d %d\n", ticks, p->pid, p->queue);
-      }
-      if (p->queue == 1)
-      {
-        p->slicetime = 3;
-      }
-      else if (p->queue == 2)
-      {
-        p->slicetime = 9;
-      }
-      else if (p->queue == 3)
-      {
-        p->slicetime = 15;
-      }
-      p->sliceticks = 0;
-      p->timeofwait = 0;
-      // p->new
-      yield();
-    }
-#endif
-  }
 
   usertrapret();
 }
-
 //
 // return to user space
 //
@@ -295,138 +221,7 @@ void kerneltrap()
 
   // give up the CPU if this is a timer interrupt.
   if (which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING)
-  {
-    // printf("%d  %s %d %d\n", myproc()->pid, myproc()->name, myproc()->queue, ticks);
-
-#ifdef RR
     yield();
-#endif
-    // struct proc *p;
-    // yield();
-#ifdef MLFQ
-#ifdef MLFQ
-    struct proc *p = 0;
-
-    for (p = proc; p < &proc[NPROC]; p++)
-    {
-      acquire(&p->lock);
-      if (p->state == RUNNABLE)
-      {
-        p->timeofwait++;
-      }
-      if (p->state == RUNNING)
-      {
-        p->sliceticks++;
-      }
-      release(&p->lock);
-    }
-    for (p = proc; p < &proc[NPROC]; p++)
-    {
-      if (p->state == RUNNABLE && p->timeofwait >= 30 && p->queue > 0)
-      {
-        if (p->pid >= 9)
-        {
-          printf("%d %d %d\n", ticks - 1, p->pid, p->queue);
-        }
-        // if (p->queue > 0)
-        // {
-        p->queue--;
-        if (p->pid >= 9)
-        {
-          printf("%d %d %d\n", ticks, p->pid, p->queue);
-        }
-        // }
-        if (p->queue == 0)
-        {
-          p->slicetime = 1;
-        }
-        else if (p->queue == 1)
-        {
-          p->slicetime = 3;
-        }
-        else if (p->queue == 2)
-        {
-          p->slicetime = 9;
-        }
-        else if (p->queue == 3)
-        {
-          p->slicetime = 15;
-        }
-        // printf("%d %d %d\n", ticks, p->pid, p->queue);
-        p->sliceticks = 0;
-        p->timeofwait = 0;
-        p->flagforio = 0;
-      }
-    }
-    // struct proc *temp = p;
-
-    for (p = proc; p < &proc[NPROC]; p++)
-    {
-      if (p->state == RUNNABLE && p->queue == 0 && p->queue < myproc()->queue)
-      {
-        myproc()->flagforio = 1;
-        // printf("YES\n");
-        yield();
-      }
-    }
-    for (p = proc; p < &proc[NPROC]; p++)
-    {
-      if (p->state == RUNNABLE && p->queue == 1 && p->queue < myproc()->queue)
-      {
-        myproc()->flagforio = 1;
-        yield();
-      }
-    }
-
-    for (p = proc; p < &proc[NPROC]; p++)
-    {
-      if (p->state == RUNNABLE && p->queue == 2 && p->queue < myproc()->queue)
-      {
-        myproc()->flagforio = 1;
-        yield();
-      }
-    }
-
-    for (p = proc; p < &proc[NPROC]; p++)
-    {
-      if (p->state == RUNNABLE && p->queue == 3 && p->queue < myproc()->queue)
-      {
-        myproc()->flagforio = 1;
-        yield();
-      }
-    }
-    p = myproc();
-    if (p->sliceticks == p->slicetime)
-    {
-      // printf("%d %d %d\n", ticks, p->pid, p->queue);
-      p->flagforio = 0;
-      if (p->queue < 3)
-
-        p->queue++;
-      if (p->pid >= 9)
-      {
-        printf("%d %d %d\n", ticks, p->pid, p->queue);
-      }
-      if (p->queue == 1)
-      {
-        p->slicetime = 3;
-      }
-      else if (p->queue == 2)
-      {
-        p->slicetime = 9;
-      }
-      else if (p->queue == 3)
-      {
-        p->slicetime = 15;
-      }
-      p->sliceticks = 0;
-      p->timeofwait = 0;
-      // p->new
-      yield();
-    }
-#endif
-#endif
-  }
 
   // the yield() may have caused some traps to occur,
   // so restore trap registers for use by kernelvec.S's sepc instruction.

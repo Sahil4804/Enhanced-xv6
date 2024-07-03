@@ -24,8 +24,7 @@ int sleep(int);
 int uptime(void);
 int waitx(int*, int* /*wtime*/, int* /*rtime*/);
 int getreadcount(void);
-int sigalarm(int ticks, void (*handler)());
-int sigreturn(void);
+int set_priority(int pid, int new_priority);
 
 
 // ulib.c

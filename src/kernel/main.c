@@ -10,12 +10,7 @@ volatile static int started = 0;
 void
 main()
 {
-
-  #ifdef FCFS
-      printf("yes");
-  #endif
-  if (cpuid() == 0)
-  {
+  if(cpuid() == 0){
     consoleinit();
     printfinit();
     printf("\n");
@@ -36,9 +31,7 @@ main()
     userinit();      // first user process
     __sync_synchronize();
     started = 1;
-  }
-  else
-  {
+  } else {
     while(started == 0)
       ;
     __sync_synchronize();

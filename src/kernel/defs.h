@@ -63,6 +63,8 @@ void            ramdiskrw(struct buf*);
 void*           kalloc(void);
 void            kfree(void *);
 void            kinit(void);
+void dec_ref(void *pa);
+void add_ref(void *pa);
 
 // log.c
 void            initlog(int, struct superblock*);
@@ -106,10 +108,6 @@ void            yield(void);
 int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
-int           getreadcount(void);
-int                sigalarm(int ticks, void (*handler)());
-int          sigreturn(void);
-
 
 // swtch.S
 void            swtch(struct context*, struct context*);
@@ -195,3 +193,5 @@ void            update_time(void);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
+
+

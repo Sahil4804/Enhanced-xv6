@@ -1,140 +1,158 @@
+# xv6
 
-# Testing system calls
+### Priority-based Scheduling
 
-## Running Tests for getreadcount
+This is a priority-based scheduling policy that chooses the process with the highest priority to execute. If two or more processes have the same priority, we break the tie using the number of times the process has been scheduled. If the tie persists, use the process's start time to break it (processes with lower start times are scheduled earlier).
 
-Running tests for this syscall is easy. Just do the following from
-inside the `initial-xv6` directory:
+We have static priority and dynamic priority here. Dynamic priority determines scheduling by varying with running, waiting and sleeping time. Dynamic priority is calculated using static priority.
 
-```sh
-prompt> ./test-getreadcounts.sh
+
+#### Implementation
+
+-   Once again, we use a for loop to find the process with the highest priority (lowest dynamic priority),  In case two or more processes have the same priority, we use the number of times the process has been scheduled to break the tie. If the tie remains, use the start-time of the process to break the tie(processes with lower start times should be scheduled further). Then the selected process is scheduled to run.
+
+-   The number of ticks,dynamicstime,dynamicrtime and wtime  are stored in struct proc::s. In the Updatetime() function, the values of these parameters are updated accordingly.
+In the same loop i have updated the RBI and Dynamic Priority of each process.
+
+-   struct proc'  stores the static priority (50 by default). When the process to be scheduled is selected, the RBI and dynamic priority are calculated in the loop.
+
+-   A process's static priority can be modified using the 'set priority()' system call. In this function, i have updated the static priority of the process and also set the RBI to 25 and Dynamic Priority of the process accordingly and also returns the old priority.
+
+```bash
+setpriority [priority] [pid]
 ```
 
-If you implemented things correctly, you should get some notification
-that the tests passed. If not ...
 
-The tests assume that xv6 source code is found in the `src/` subdirectory.
-If it's not there, the script will complain.
+# Effectiveness of Static Priority (SP): 
+### Observation:
+- SP represents the inherent priority of a process which ranges from 0 to 100. Lower SP values indicate higher priority for scheduling. It's default value for each process is 50. Analysis: Decreasing the SP(Static priority) of a process increases its priority, making it more likely to be scheduled. Increasing the SP lowers the priority, potentially delaying the process's execution. Outcome : So we can make a process to get scheduled fast or gets delayed by using SP(Static priority) parameter of a process by using set_priority system call.
 
-The test script does a one-time clean build of your xv6 source code
-using a newly generated makefile called `Makefile.test`. You can use
-this when debugging (assuming you ever make mistakes, that is), e.g.:
-
-```sh
-prompt> cd src/
-prompt> make -f Makefile.test qemu-nox
-```
-
-You can suppress the repeated building of xv6 in the tests with the
-`-s` flag. This should make repeated testing faster:
-
-```sh
-prompt> ./test-getreadcounts.sh -s
-```
-
----
-
-## Running Tests for sigalarm and sigreturn
-
-**After implementing both sigalarm and sigreturn**, do the following:
-- Make the entry for `alarmtest` in `src/Makefile` inside `UPROGS`
-- Run the command inside xv6:
-    ```sh
-    prompt> alarmtest
-    ```
-
----
-
-## Getting runtimes and waittimes for your schedulers
-- Run the following command in xv6:
-    ```sh
-    prompt> schedulertest
-    ```  
----
-
-## Running tests for entire xv6 OS
-- Run the following command in xv6:
-    ```sh
-    prompt> usertests
-    ```
-
----
+# Effectiveness of RBI (RTime, WTime, STime):
+### Observation:
+- RBI is a weighted sum of Running Time (RTime), Sleeping Time (STime), and Waiting Time (WTime). RBI adjusts the dynamic priority based on recent behavior. It's default value will be 25 for each process.
+### Running Time (RTime):
+- The total time the process has been running since it was last scheduled. A process with high RTime might have a higher RBI, indicating a potential increase in dynamic priority and thus overall decrease the chances of that process to get rescheduled.
+### Sleeping Time (STime): 
+- The total time the process has spent sleeping (i.e., blocked and not using CPU time) since it was last scheduled. High STime decreases the RBI, potentially reducing dynamic priority which increases the chances of that process to get rescheduled with respect to others.
+### Waiting Time (WTime):
+- The total time the process has spent in the ready queue waiting to be scheduled. A process waiting for a long time may have a lower RBI as it is with minus sign in numerator so decreasing the RBI value, and decreasing the dynamic Priority and thus overall increasing priority to get scheduled.
+### Weighted Sum:
+- The weighted sum captures the overall recent behavior impact on priority.
 
 
+# Analysis of PBS (DP):
+
+PBS Analysis:
+![plt_Photo](meraplt.png)
+
+## Effectiveness of Static Priority (SP): 
+### Observation:
+- SP represents the inherent priority of a process which ranges from 0 to 100. Lower SP values indicate higher priority for scheduling. It's default value for each process is 50. Analysis: Decreasing the SP(Static priority) of a process increases its priority, making it more likely to be scheduled. Increasing the SP lowers the priority, potentially delaying the process's execution. Outcome : So we can make a process to get scheduled fast or gets delayed by using SP(Static priority) parameter of a process by using set_priority system call.
+
+## Effectiveness of RBI (RTime, WTime, STime):
+### Observation:
+- RBI is a weighted sum of Running Time (RTime), Sleeping Time (STime), and Waiting Time (WTime). RBI adjusts the dynamic priority based on recent behavior. It's default value will be 25 for each process.
+### Running Time (RTime):
+- The total time the process has been running since it was last scheduled. A process with high RTime might have a higher RBI, indicating a potential increase in dynamic priority and thus overall decrease the chances of that process to get rescheduled.
+### Sleeping Time (STime): 
+- The total time the process has spent sleeping (i.e., blocked and not using CPU time) since it was last scheduled. High STime decreases the RBI, potentially reducing dynamic priority which increases the chances of that process to get rescheduled with respect to others.
+### Waiting Time (WTime):
+- The total time the process has spent in the ready queue waiting to be scheduled. A process waiting for a long time may have a lower RBI as it is with minus sign in numerator so decreasing the RBI value, and decreasing the dynamic Priority and thus overall increasing priority to get scheduled.
+### Weighted Sum:
+- The weighted sum captures the overall recent behavior impact on priority.
+
+## Impact on Dynamic Priority (DP):
+
+## Observation:
+- DP is the minimum of (sum of SP and RBI) and 100. DP determines the order of process execution.
+- Analysis: Processes with lower DP values get scheduled first. SP and RBI interact to dynamically adjust the priority. Frequent adjustments ensure responsiveness to changing behavior by using set_priority syscall.
+
+## Average Turnaround Time:
+### Advantages in Terms of Average Turnaround Time:
+- Allows for prioritization of tasks, potentially leading to shorter turnaround times for high-priority tasks. Can be more adaptive to changing workload requirements, dynamically adjusting priorities.
+
+### Disadvantages in Terms of Average Turnaround Time: 
+- If priorities are not managed effectively, low-priority tasks may experience longer waiting times. Priority inversion issues, where high-priority tasks are blocked by lower-priority tasks, can impact average turnaround time.
+
+## Throughput:
+### Advantage:
+- PBS can optimize throughput by allowing higher-priority tasks to be scheduled more frequently.
+### Disadvantage:
+- Lower-priority tasks may experience reduced throughput, potentially leading to resource starvation.
+
+## Responsiveness:
+### Advantage:
+- PBS can provide better responsiveness by giving priority to high-priority tasks.
+### Disadvantage:
+- Low-priority tasks may experience reduced responsiveness or even starvation.
+
+## Fairness:
+### Advantage:
+- PBS can be fairer than some other scheduling algorithms by allowing lower-priority tasks to execute.
+### Disadvantage:
+- In scenarios with a large number of high-priority tasks, lower-priority tasks may experience reduced fairness.
+
+## Complexity:
+### Advantage:
+- PBS is flexible and allows dynamic adjustment of priorities, making it suitable for diverse workloads.
+### Disadvantage:
+- The flexibility introduces complexity in priority management and may lead to priority inversion issues.
+
+## Implementation Overhead:
+### Advantage:
+- PBS can have a moderate implementation overhead compared to more complex algorithms.
+### Disadvantage:
+- The need for priority management can increase implementation complexity.
+
+## Adaptability:
+### Advantage:
+- PBS is adaptable to changing workload requirements by dynamically adjusting priorities.
+### Disadvantage:
+- Frequent adjustments may lead to increased overhead and potential disruptions.
+
+## Advantages of Priority-Based Scheduling (PBS):
+
+## Prioritization:
+- Allows tasks to be prioritized based on importance or urgency, leading to optimized scheduling for critical tasks.
+
+## Flexibility:
+- Can dynamically adjust priorities, making it suitable for environments with varying workload characteristics.
+
+## Responsiveness:
+- Provides better responsiveness by giving preference to high-priority tasks.
+
+## Fairness:
+- Can be fairer than some other scheduling algorithms, ensuring that lower-priority tasks are not completely starved.
+
+## Disadvantages of Priority-Based Scheduling (PBS):
+
+## Priority Inversion:
+- May suffer from priority inversion issues, where high-priority tasks are blocked by lower-priority tasks.
+
+## Starvation:
+- If not managed effectively, low-priority tasks may face increased waiting times or even starvation.
+
+## Complexity:
+- The flexibility and prioritization introduce complexity in priority management and may require careful implementation.
+
+## Assumptions
+I have not taken the default value for the intial RBI.
 
 
-# Scheduling Report (Specification 3)
 
-## Implementation of FCFS
-In FCFS, I first disabled the preemption (just didnot call the yield() function).
-(
-    yield is for giving the control to the OS.
-) 
-then at every interrupt I am checking for the process having the oldest creation time (p->ctime) and then making it run till finishing.
+## Bibliography
 
+1. *ChatGPT Documentation:*
+   - [OpenAI ChatGPT Documentation](https://platform.openai.com/docs/guides/chat)
+   - [OpenAI GPT-3.5 Model Documentation](https://platform.openai.com/docs/models/gpt)
 
-## Implementation of MLFQ
-### Priority Queue-Based Scheduler with Aging Implementation Description
+2. *GitBook.io Guides:*
+   - [Markdown Guide on GitBook.io](https://xiayingp.gitbook.io/build_a_os/hardware-device-assembly/start-xv6-and-the-first-process)
 
-In our system, we have implemented a priority queue-based scheduler to efficiently manage and allocate CPU time to processes. The scheduler uses four priority queues, with the highest priority assigned to queue number 0 and the lowest priority to queue number 3. Each priority queue has a different time-slice allocated for executing processes, which ensures that higher-priority tasks receive more frequent CPU time.
-
-### Initialization and Process Entry:
-
-When a process is initiated, it is pushed to the end of the highest priority queue (queue 0 by default).
-The scheduler always runs the process in the highest priority queue that is not empty, ensuring that critical tasks get immediate attention.
-Preemption and Time-Slice:
-
-If a process in a higher-priority queue becomes available (e.g., a process enters queue 0), it preempts the currently running process in a lower-priority queue (if any).
-Each priority queue has a specific time-slice allocated for execution:
-Priority 0: 1 timer tick
-Priority 1: 3 timer ticks
-Priority 2: 9 timer ticks
-Priority 3: 15 timer ticks
-If a process uses its complete time slice in its current priority queue, it is preempted and moved to the next lower priority queue.
-Voluntary Relinquishing of CPU Control:
-
-When a process voluntarily relinquishes control of the CPU, such as for I/O operations, it leaves the queuing network.
-When the process becomes ready again after I/O, it is inserted at the tail of the same queue from which it was relinquished earlier.
-Round-Robin Scheduler for Lowest Priority Queue:
-
-The lowest priority queue (queue 3) uses a round-robin scheduling algorithm to ensure that all processes in this queue get a fair share of CPU time.
-Aging to Prevent Starvation:
-
-To prevent process starvation in lower-priority queues, we implement aging of processes.
-If the wait time of a process in a priority queue (other than priority 0) exceeds a certain limit (30s)(set to prevent starvation), their priority is increased.
-The aging process ensures that processes that have been waiting for a long time in lower-priority queues gradually move up to higher-priority queues, giving them a chance to execute sooner.
-The wait time for a process is reset to 0 whenever the scheduler selects it for execution or when a change in the queue occurs due to aging.
-Overall, this priority queue-based scheduler with aging effectively manages process execution, giving higher priority to critical tasks, preventing starvation of lower-priority processes, and ensuring fair access to CPU time for all processes in the syst
+3. *Github Co-Pilot:*
+    - [Markdown Guide on Github-Co-Pilot Documentation](https://docs.github.com/en/copilot)
 
 
-I have not made actual queues , just included extra entry called "queue" and iterating all over to check the queue numbers.
 
 
-## Performance Comparison
 
-The following shows the average runtimes and average waiting times of the 10 child processes (5 I/O bound and 5 CPU bound) spawned by the `schedulertest` process, all on one CPU
--------
-CPUS:1
-FCFS:Average rtime 10,  wtime 120
-RR:Average rtime 9,  wtime 138
-MLFQ:Average rtime 10,  wtime 135
-
-## Timeline graph for MLFQ
-[!click](MLFQ_image.png)
-
-
-# Scheduling Algorithm Performance Comparison
-
- In this project, we've implemented and compared three popular scheduling algorithms: Round Robin (RR), First-Come, First-Served (FCFS), and Multi-Level Feedback Queue (MLFQ). The comparison is based on their average response time (rtime) and average waiting time (wtime).
-
-
-## Here's how the average waiting times compare:
-
-- *FCFS* stands out with the lowest average waiting time (144), indicating that processes spend less time waiting in the queue before execution.
-- *RR* has a somewhat higher average waiting time (183) compared to FCFS, implying that processes, on average, wait longer in the queue before getting a chance to execute.
-- *MLFQ* demonstrates a waiting time (185) close to that of RR, suggesting a similar average waiting time.
-
-## Conclusion:
-
-- *FCFS* performs exceptionally well in terms of average waiting time, offering the lowest waiting time for processes.
-- *RR* and *MLFQ* exhibit similar average waiting times, with RR having a slightly lower average waiting time.
